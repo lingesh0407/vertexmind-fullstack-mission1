@@ -1,17 +1,27 @@
-const auth = require("../middleware/auth");
-
 const express = require("express");
-const router = express.Router();
-const User = require("../models/User");
+const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+
+const router = express.Router();
+
+const User = require("../models/User");
+const auth = require("../middleware/auth");
 
 // ================= REGISTER =================
 router.post("/register", async (req, res) => {
   try {
+    console.log("Register Request:", req.body);
+    console.log("MongoDB State:", mongoose.connection.readyState);
+
     const { name, email, password } = req.body;
 
-    // Check if user already exists
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "All fields are required",
+      });
+    }
+
     const existingUser = await User.findOne({ email });
 
     if (existingUser) {
@@ -20,10 +30,8 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Save user
     const user = new User({
       name,
       email,
@@ -36,6 +44,7 @@ router.post("/register", async (req, res) => {
       message: "Registration Successful",
     });
   } catch (err) {
+    console.error("Register Error:", err);
     res.status(500).json({
       error: err.message,
     });
@@ -45,7 +54,16 @@ router.post("/register", async (req, res) => {
 // ================= LOGIN =================
 router.post("/login", async (req, res) => {
   try {
+    console.log("Login Request:", req.body);
+    console.log("MongoDB State:", mongoose.connection.readyState);
+
     const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email and Password are required",
+      });
+    }
 
     const user = await User.findOne({ email });
 
@@ -59,7 +77,7 @@ router.post("/login", async (req, res) => {
 
     if (!isMatch) {
       return res.status(400).json({
-        message: "Invalid password",
+        message: "Invalid Password",
       });
     }
 
@@ -74,28 +92,33 @@ router.post("/login", async (req, res) => {
       token,
     });
   } catch (err) {
+    console.error("Login Error:", err);
     res.status(500).json({
       error: err.message,
     });
   }
 });
 
-// ================= GET ALL USERS =================
-router.get("/", async (req, res) => {
-  try {
-    const users = await User.find().select("-password");
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({
-      error: err.message,
-    });
-  }
-});
-router.get("/profile", auth, async (req, res) => {
+// ================= PROTECTED PROFILE =================
+router.get("/profile", auth, (req, res) => {
   res.json({
     message: "Protected Route Accessed Successfully",
     user: req.user,
   });
+});
+
+// ================= GET ALL USERS =================
+router.get("/", async (req, res) => {
+  try {
+    const users = await User.find().select("-password");
+
+    res.json(users);
+  } catch (err) {
+    console.error("Get Users Error:", err);
+    res.status(500).json({
+      error: err.message,
+    });
+  }
 });
 
 // ================= GET USER BY ID =================
@@ -111,6 +134,7 @@ router.get("/:id", async (req, res) => {
 
     res.json(user);
   } catch (err) {
+    console.error("Get User Error:", err);
     res.status(500).json({
       error: err.message,
     });
@@ -123,11 +147,20 @@ router.put("/:id", async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { new: true }
+      {
+        new: true,
+      }
     ).select("-password");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
 
     res.json(updatedUser);
   } catch (err) {
+    console.error("Update Error:", err);
     res.status(500).json({
       error: err.message,
     });
@@ -137,12 +170,19 @@ router.put("/:id", async (req, res) => {
 // ================= DELETE USER =================
 router.delete("/:id", async (req, res) => {
   try {
-    await User.findByIdAndDelete(req.params.id);
+    const deletedUser = await User.findByIdAndDelete(req.params.id);
+
+    if (!deletedUser) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
 
     res.json({
       message: "User deleted successfully",
     });
   } catch (err) {
+    console.error("Delete Error:", err);
     res.status(500).json({
       error: err.message,
     });
